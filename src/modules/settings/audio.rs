@@ -3,14 +3,15 @@ use crate::{
     components::icons::{StaticIcon, icon, icon_button},
     services::{
         ReadOnlyService, Service, ServiceEvent,
-        audio::{AudioCommand, AudioService, DeviceType, Sinks},
+        audio::{AudioCommand, AudioService, DeviceType, Sinks, Sources},
     },
     theme::AshellTheme,
 };
 use iced::{
     Alignment, Element, Length, Subscription, Theme,
     widget::{
-        Column, MouseArea, Row, button, column, container, horizontal_rule, row, slider, text,
+        Column, MouseArea, Row, button, column, container, horizontal_rule,
+        row, slider, text,
     },
     window::Id,
 };
@@ -47,7 +48,9 @@ pub struct AudioSettingsConfig {
 }
 
 impl AudioSettingsConfig {
-    pub fn new(sinks_more_cmd: Option<String>, sources_more_cmd: Option<String>) -> Self {
+    pub fn new(
+        sinks_more_cmd: Option<String>, sources_more_cmd: Option<String>,
+    ) -> Self {
         Self {
             sinks_more_cmd,
             sources_more_cmd,
@@ -88,7 +91,7 @@ impl AudioSettings {
                     self.service = Some(service);
 
                     Action::None
-                }
+                },
                 ServiceEvent::Update(data) => {
                     if let Some(service) = self.service.as_mut() {
                         service.update(data);
@@ -102,7 +105,7 @@ impl AudioSettings {
                         }
                     }
                     Action::None
-                }
+                },
                 ServiceEvent::Error(_) => Action::None,
             },
             Message::ToggleSinkMute => {
@@ -110,43 +113,45 @@ impl AudioSettings {
                     let _ = service.command(AudioCommand::ToggleSinkMute);
                 }
                 Action::None
-            }
+            },
             Message::SinkVolumeChanged(value) => {
                 if let Some(service) = self.service.as_mut() {
                     let _ = service.command(AudioCommand::SinkVolume(value));
                 }
                 Action::None
-            }
+            },
             Message::DefaultSinkChanged(name, port) => {
                 if let Some(service) = self.service.as_mut() {
-                    let _ = service.command(AudioCommand::DefaultSink(name, port));
+                    let _ =
+                        service.command(AudioCommand::DefaultSink(name, port));
                 }
                 Action::None
-            }
+            },
             Message::ToggleSourceMute => {
                 if let Some(service) = self.service.as_mut() {
                     let _ = service.command(AudioCommand::ToggleSourceMute);
                 }
                 Action::None
-            }
+            },
             Message::SourceVolumeChanged(value) => {
                 if let Some(service) = self.service.as_mut() {
                     let _ = service.command(AudioCommand::SourceVolume(value));
                 }
                 Action::None
-            }
+            },
             Message::DefaultSourceChanged(name, port) => {
                 if let Some(service) = self.service.as_mut() {
-                    let _ = service.command(AudioCommand::DefaultSource(name, port));
+                    let _ = service
+                        .command(AudioCommand::DefaultSource(name, port));
                 }
                 Action::None
-            }
+            },
             Message::OpenMore => {
                 if let Some(cmd) = &self.config.sinks_more_cmd {
                     crate::utils::launcher::execute_command(cmd.to_string());
                 }
                 Action::None
-            }
+            },
             Message::SinksMore(id) => {
                 if let Some(cmd) = &self.config.sinks_more_cmd {
                     crate::utils::launcher::execute_command(cmd.to_string());
@@ -154,7 +159,7 @@ impl AudioSettings {
                 } else {
                     Action::None
                 }
-            }
+            },
             Message::SourcesMore(id) => {
                 if let Some(cmd) = &self.config.sources_more_cmd {
                     crate::utils::launcher::execute_command(cmd.to_string());
@@ -162,13 +167,13 @@ impl AudioSettings {
                 } else {
                     Action::None
                 }
-            }
+            },
             Message::ToggleSinksMenu => Action::ToggleSinksMenu,
             Message::ToggleSourcesMenu => Action::ToggleSourcesMenu,
             Message::ConfigReloaded(config) => {
                 self.config = config;
                 Action::None
-            }
+            },
         }
     }
 
@@ -177,12 +182,51 @@ impl AudioSettings {
             .as_ref()
             .filter(|service| !service.sinks.is_empty())
             .map(|service| {
-                let icon_type = service.sinks.get_icon(&service.server_info.default_sink);
+                let icon_type = Sinks::get_icon(
+                    &service.sinks,
+                    &service.server_info.default_sink,
+                );
                 let icon = icon(icon_type);
-                MouseArea::new(icon)
+                let volume_text = text(format!("{}%", service.cur_sink_volume))
+                    .width(Length::Shrink);
+                let indicator = Row::new()
+                    .push(icon)
+                    .push(volume_text)
+                    .spacing(8.0)
+                    .align_y(Alignment::Center);
+
+                MouseArea::new(indicator)
                     .on_right_press(Message::OpenMore)
                     .on_scroll(|delta| {
                         let cur_vol = service.cur_sink_volume;
+                        let delta = match delta {
+                            iced::mouse::ScrollDelta::Lines { y, .. } => y,
+                            iced::mouse::ScrollDelta::Pixels { y, .. } => y,
+                        };
+                        let new_volume = if delta > 0.0 {
+                            (cur_vol + 2).min(100)
+                        } else {
+                            (cur_vol - 2).max(0)
+                        };
+                        Message::SinkVolumeChanged(new_volume)
+                    })
+                    .into()
+            })
+    }
+
+    pub fn source_indicator(&'_ self) -> Option<Element<'_, Message>> {
+        self.service
+            .as_ref()
+            .filter(|service| !service.sources.is_empty())
+            .map(|service| {
+                let icon_type = Sources::get_icon(
+                    &service.sources,
+                    &service.server_info.default_source,
+                );
+                let icon = icon(icon_type);
+                MouseArea::new(icon)
+                    .on_scroll(|delta| {
+                        let cur_vol = service.cur_source_volume;
                         let delta = match delta {
                             iced::mouse::ScrollDelta::Lines { y, .. } => y,
                             iced::mouse::ScrollDelta::Pixels { y, .. } => y,
@@ -192,16 +236,14 @@ impl AudioSettings {
                         } else {
                             (cur_vol - 5).max(0)
                         };
-                        Message::SinkVolumeChanged(new_volume)
+                        Message::SourceVolumeChanged(new_volume)
                     })
                     .into()
             })
     }
 
     pub fn sliders<'a>(
-        &'a self,
-        theme: &'a AshellTheme,
-        sub_menu: Option<SubMenu>,
+        &'a self, theme: &'a AshellTheme, sub_menu: Option<SubMenu>,
     ) -> (Option<Element<'a, Message>>, Option<Element<'a, Message>>) {
         if let Some(service) = &self.service {
             let active_sink = service
@@ -217,7 +259,13 @@ impl AudioSettings {
                     Message::ToggleSinkMute,
                     service.cur_sink_volume,
                     &Message::SinkVolumeChanged,
-                    if service.sinks.iter().map(|s| s.ports.len()).sum::<usize>() > 1 {
+                    if service
+                        .sinks
+                        .iter()
+                        .map(|s| s.ports.len())
+                        .sum::<usize>()
+                        > 1
+                    {
                         Some((sub_menu, Message::ToggleSinksMenu))
                     } else {
                         None
@@ -225,11 +273,10 @@ impl AudioSettings {
                 )
             });
 
-            if service.sources.iter().any(|source| source.in_use) {
-                let active_source = service
-                    .sources
-                    .iter()
-                    .find(|source| source.name == service.server_info.default_source);
+            if !service.sources.is_empty() {
+                let active_source = service.sources.iter().find(|source| {
+                    source.name == service.server_info.default_source
+                });
 
                 let source_slider = active_source.map(|s| {
                     Self::slider(
@@ -239,7 +286,13 @@ impl AudioSettings {
                         Message::ToggleSourceMute,
                         service.cur_source_volume,
                         &Message::SourceVolumeChanged,
-                        if service.sources.iter().map(|s| s.ports.len()).sum::<usize>() > 1 {
+                        if service
+                            .sources
+                            .iter()
+                            .map(|s| s.ports.len())
+                            .sum::<usize>()
+                            > 1
+                        {
                             Some((sub_menu, Message::ToggleSourcesMenu))
                         } else {
                             None
@@ -257,9 +310,7 @@ impl AudioSettings {
     }
 
     pub fn sinks_submenu<'a>(
-        &'a self,
-        id: Id,
-        theme: &'a AshellTheme,
+        &'a self, id: Id, theme: &'a AshellTheme,
     ) -> Option<Element<'a, Message>> {
         self.service.as_ref().map(|service| {
             Self::submenu(
@@ -269,10 +320,17 @@ impl AudioSettings {
                     .iter()
                     .flat_map(|s| {
                         s.ports.iter().map(|p| SubmenuEntry {
-                            name: format!("{}: {}", p.description, s.description),
+                            name: format!(
+                                "{}: {}",
+                                p.description, s.description
+                            ),
                             device: p.device_type,
-                            active: p.active && s.name == service.server_info.default_sink,
-                            msg: Message::DefaultSinkChanged(s.name.clone(), p.name.clone()),
+                            active: p.active
+                                && s.name == service.server_info.default_sink,
+                            msg: Message::DefaultSinkChanged(
+                                s.name.clone(),
+                                p.name.clone(),
+                            ),
                         })
                     })
                     .collect(),
@@ -286,9 +344,7 @@ impl AudioSettings {
     }
 
     pub fn sources_submenu<'a>(
-        &'a self,
-        id: Id,
-        theme: &'a AshellTheme,
+        &'a self, id: Id, theme: &'a AshellTheme,
     ) -> Option<Element<'a, Message>> {
         self.service.as_ref().map(|service| {
             Self::submenu(
@@ -298,10 +354,17 @@ impl AudioSettings {
                     .iter()
                     .flat_map(|s| {
                         s.ports.iter().map(|p| SubmenuEntry {
-                            name: format!("{}: {}", p.description, s.description),
+                            name: format!(
+                                "{}: {}",
+                                p.description, s.description
+                            ),
                             device: p.device_type,
-                            active: p.active && s.name == service.server_info.default_source,
-                            msg: Message::DefaultSourceChanged(s.name.clone(), p.name.clone()),
+                            active: p.active
+                                && s.name == service.server_info.default_source,
+                            msg: Message::DefaultSourceChanged(
+                                s.name.clone(),
+                                p.name.clone(),
+                            ),
                         })
                     })
                     .collect(),
@@ -315,11 +378,8 @@ impl AudioSettings {
     }
 
     fn slider<'a>(
-        theme: &'a AshellTheme,
-        slider_type: SliderType,
-        is_mute: bool,
-        toggle_mute: Message,
-        volume: i32,
+        theme: &'a AshellTheme, slider_type: SliderType, is_mute: bool,
+        toggle_mute: Message, volume: i32,
         volume_changed: &'a dyn Fn(i32) -> Message,
         with_submenu: Option<(Option<SubMenu>, Message)>,
     ) -> Element<'a, Message> {
@@ -369,7 +429,9 @@ impl AudioSettings {
                     theme,
                     match (slider_type, submenu) {
                         (SliderType::Sink, Some(SubMenu::Sinks))
-                        | (SliderType::Source, Some(SubMenu::Sources)) => StaticIcon::Close,
+                        | (SliderType::Source, Some(SubMenu::Sources)) => {
+                            StaticIcon::Close
+                        },
                         _ => StaticIcon::RightArrow,
                     },
                 )
@@ -381,8 +443,7 @@ impl AudioSettings {
     }
 
     fn submenu<'a>(
-        theme: &'a AshellTheme,
-        entries: Vec<SubmenuEntry<Message>>,
+        theme: &'a AshellTheme, entries: Vec<SubmenuEntry<Message>>,
         more_msg: Option<Message>,
     ) -> Element<'a, Message> {
         let entries = Column::with_children(

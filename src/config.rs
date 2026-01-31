@@ -259,6 +259,7 @@ pub enum SettingsIndicator {
     IdleInhibitor,
     PowerProfile,
     Audio,
+    Microphone,
     Network,
     Vpn,
     Bluetooth,
@@ -330,6 +331,7 @@ impl Default for SettingsModuleConfig {
                 SettingsIndicator::IdleInhibitor,
                 SettingsIndicator::PowerProfile,
                 SettingsIndicator::Audio,
+                SettingsIndicator::Microphone,
                 SettingsIndicator::Bluetooth,
                 SettingsIndicator::Network,
                 SettingsIndicator::Vpn,
@@ -349,16 +351,25 @@ pub struct SettingsCustomButton {
     pub tooltip: Option<String>,
 }
 
+#[derive(Deserialize, Copy, Clone, Default, PartialEq, Eq, Debug)]
+pub enum MediaPlayerFormat {
+    Icon,
+    #[default]
+    IconAndTitle,
+}
+
 #[derive(Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct MediaPlayerModuleConfig {
     pub max_title_length: u32,
+    pub indicator_format: MediaPlayerFormat,
 }
 
 impl Default for MediaPlayerModuleConfig {
     fn default() -> Self {
         MediaPlayerModuleConfig {
             max_title_length: 100,
+            indicator_format: MediaPlayerFormat::default(),
         }
     }
 }
